@@ -1,0 +1,48 @@
+# -------------------FIND SINGLETS AND DOUBLETS (SD)-------------------------------
+
+library(tidyverse)
+library(DoubletFinder)
+
+# determine pK
+sweep.res.list = paramSweep(Sobj, PCs = 1:20, sct = TRUE)
+sweep.stats = summarizeSweep(sweep.res.list, GT = FALSE)
+bcmvn = find.pK(sweep.stats)
+pK = bcmvn %>%
+  dplyr::filter(BCmetric == max(BCmetric)) %>%
+  dplyr::select(pK)
+pK = as.numeric(as.character(pK[[1]]))
+
+# plot pK values
+x = as.numeric(bcmvn$pK)
+y = as.numeric(bcmvn$BCmetric)
+plot(x, y)
+
+# determine doublet percentage based on cell number, see https://kb.10xgenomics.com/hc/en-us/articles/360001378811-What-is-the-maximum-number-of-cells-that-can-be-profiled
+
+# table(Sobj@meta.data$sampleID)
+# c1 9501  (7.2 %)  pK 0.05
+# c2 15645 (10 %)  pK 0.11
+# c3 10478 (8 %)   pK 0.18
+# m6h1 9146 (7.2 %) pK 0.16
+# m6h2 15062 (10 %) pK 0.24
+# m6h3 11505 (8 %)  pK 0.01
+# m28h 13049 (10 %) pK 0.08
+
+# find doublets and create a column for those
+SDdata = doubletFinder(Sobj, PCs = 1:20, pN = 0.25, pK = pK,
+                           nExp = round(0.08*nrow(Sobj@meta.data)),
+                           reuse.pANN = FALSE, sct = T)
+
+# see column header and rename accordingly
+View(SDdata@meta.data)
+SDdata$singl.doubl = SDdata$DF.classifications_0.25_0.01_920
+
+#visualize
+tiff("UMAP_doublets_6h3.tiff", units="in", width=5, height=4, res=300)
+DimPlot(SDdata, group.by = "singl.doubl", pt.size = 0.3)
+dev.off()
+
+saveRDS(SDdata, file = "SDdata.rds")
+
+# use this data for further integration/clustering/analysis
+# save each sample separately and name according to experiment and treatment
