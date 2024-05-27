@@ -1,0 +1,312 @@
+
+library(Seurat)
+library(dplyr)
+library(SeuratObject)
+# ------------------- FILTER FOR INTEGRATION -------------------------------
+
+# use each individually processed file from step 2. find doublets
+# merge to easify processing
+merged <-  merge(SDdata_c1, y = c(SDdata_6h1, SDdata_c2, SDdata_6h2, SDdata_28h, SDdata_c3, SDdata_6h3),  project = "mouse")
+merged
+
+saveRDS(merged, file = "merged.rds")
+
+# repeat similarly for each object
+table(merged@meta.data$sampleID)
+#c1    c2    c3  m28h  m6h1  m6h2  m6h3 
+#9501 15645 10478 13049  9146 15062 11505 
+
+SD_Sobj  = subset(merged, subset = nFeature_RNA > 1000 & nFeature_RNA < 5000)
+SD_Sobj  = subset(SD_Sobj, subset = nCount_RNA < 40000)
+table(SD_Sobj@meta.data$sampleID)
+
+#c1    c2    c3  m28h  m6h1  m6h2  m6h3 
+#7132 11503  8391  9513  6464 10923  8318 
+
+#visualize
+tiff("Violin_SD_Sobj.tiff", units="in", width=10, height=6, res=300)
+VlnPlot(SD_Sobj, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol = 2, pt.size = 0) 
+dev.off()
+
+# get RNA data
+rdata = GetAssayData(object = SD_Sobj, assay = "RNA", layer = "counts")
+rdata = CreateSeuratObject(counts = rdata)
+
+# keep information from metadatatable
+temp = SD_Sobj@meta.data
+all(colnames(rdata) == row.names(temp)) # [1] TRUE
+
+# select the data
+rdata = AddMetaData(rdata, temp$percent.mt, col.name = "percent.mt")
+rdata = AddMetaData(rdata, temp$percent.rb, col.name = "percent.rb")
+rdata = AddMetaData(rdata, temp$sampleID, col.name = "sampleID")
+rdata = AddMetaData(rdata, temp$treatment, col.name = "treatment")
+rdata = AddMetaData(rdata, temp$singl.doubl, col.name = "singl.doubl")
+
+View(rdata@meta.data)
+
+# ------------------- DATA INTEGRATION - SEURAT V5 -------------------------------
+
+# normalization and dimensional reduction
+rdata[["RNA"]] = split(rdata[["RNA"]], f = rdata$sampleID)
+options(future.globals.maxSize = 3e+09)
+Sobj5 = SCTransform(rdata)
+Sobj5 = RunPCA(Sobj5, npcs = 50, verbose = F)
+
+#check plot for PCs
+pdf("med.elbowplots_S5.pdf")
+ElbowPlot(Sobj5, ndims = 50)
+dev.off()
+
+#save
+saveRDS(Sobj5, file = "Sobj5.rds")
+
+#integrate and cluster
+integrateddata = IntegrateLayers(object = Sobj5,  method = RPCAIntegration,  normalization.method = "SCT",  verbose = T)
+clustereddata = FindNeighbors(integrateddata, reduction = "integrated.dr", dims = 1:30)
+clustered = FindClusters(clustereddata, resolution = 0.8)
+UMAP = RunUMAP(clustered, reduction = "integrated.dr", dims = 1:30)
+saveRDS(UMAP, file = "UMAP_S5.rds")
+
+# Visualization of cluster identity and data quality
+DefaultAssay(UMAP) = "SCT"
+UMAPPlot(UMAP, label = T, split.by = "treatment", pt.size = 0.1)
+VlnPlot(UMAP, features = c("nCount_RNA", "nFeature_RNA","percent.mt", "percent.rb"), pt.size = 0)
+DotPlot(UMAP, features = (MouseMarkers)) + RotatedAxis() + scale_colour_gradient2(low = "#0000FF", mid = "#FFFFFF", high = "#FF0000")
+
+# markers for mouse (for identification)
+MouseMarkers = c ("Pecam1", "Cdh5", "Tek",          # endothelial
+                  "Plat", "Fbln2", "Mgp", "Bmx",    # artery  
+                  "Cd93", "Ptprb", "Aplnr",         # gCap
+                  "Car4",  "Apln",                  # aCap
+                  "Prox1", "Pdpn",                  # LEC
+                  "Slc6a2", "Amigo2",               # vein  
+                  "Pmel", "Mlana",                  # melanoma
+                  "Hbb-bs",                         # reticulocyte
+                  "Muc1", "Epcam",                  # epithelial
+                  "Cd36"  ,                         # adipo progenitor
+                  "Pdgfa","Pdgfra", "Palld",        # fibroblast 
+                  "Pdgfrb", "Itga8", "Cspg4",       # pericytes
+                  "Itga2b",                         # platelets
+                  "Ptprc",                          # leukocytes
+                  "Cd68",                           # macrophages
+                  "Itgax",                          # monocyte
+                  "S100a8", "S100a9",               # neutrophils  
+                  "Ccr7",                           # lymphocytes
+                  "Cd28",                           # T cells
+                  "Bank1", "H2-Ob")                 # B cells
+
+DefaultAssay(UMAP) = "SCT"
+ClusterMarkersPrep = PrepSCTFindMarkers(UMAP, assay = "SCT", verbose = TRUE)
+ClusterMarkers = FindAllMarkers(ClusterMarkersPrep, assay = "SCT", only.pos = TRUE, logfc.threshold = 0.2)
+write.table(ClusterMarkers, "MarkersFC02_alldata.txt", sep="\t", row.names=TRUE, col.names=TRUE, quote= F)
+
+# rename  
+namedclusters = RenameIdents((UMAP),
+                           `0` = "EC",      # gCap
+                           `1` = "EC",      # gCap
+                           `2` = "EC",      # gCap
+                           `3` = "EC",      # aCap
+                           `4` = "EC",      # gCap
+                           `5` = "EC",      # hIFN
+                           `6` = "lowQEC",  # low count, high mt, rb
+                           `7` = "lowQEC",  # low count, high mt
+                           `8` = "EC",      # crEC
+                           `9` = "EC",      # vein
+                           `10` = "EC",     # aCap
+                           `11` = "lowQEC", # doublet 
+                           `12` = "EC",     # gCap
+                           `13` = "EC",     # artery
+                           `14` = "nonEC",  # non-EC - high Pdgfa
+                           `15` = "nonEC",  # fibroblast
+                           `16` = "EC",     # gCap 
+                           `17` = "nonEC",  # pericyte
+                           `18` = "lowQEC", # doublet
+                           `19` = "lowQEC", # lowcount
+                           `20` = "lowQEC", # low quality
+                           `21` = "EC",     # LEC
+                           `22` = "nonEC",  # B cell
+                           `23` = "lowQEC", # low count vein
+                           `24` = "nonEC",  # epithelial
+                           `25` = "nonEC",  # reticulocyte
+                           `26` = "lowQEC", # doublet - platelet marker - aCap
+                           `27` = "nonEC",  # macrophage
+                           `28` = "nonEC",  # Tcell
+                           `29` = "nonEC",  # pericyte
+                           `30` = "Melanoma",
+                           `31` = "nonEC",  # monocyte
+                           `32` = "nonEC",  # Ptprc pos
+                           `33` = "nonEC")  # neutrophil 
+
+# see cell numbers
+table(Idents(namedclusters))
+# EC        lowQEC    nonEC     Melanoma 
+# 47282    10362      4504       96 
+
+saveRDS(namedclusters, file = "names_res08.rds")
+
+# subset EC, melanoma and nonEC
+Subset = subset(namedclusters, idents = c("EC", "Melanoma", "nonEC"))
+
+#add experiment data
+Sobj = Subset
+temp = Sobj@meta.data
+temp = temp %>%
+  mutate(sampleID = case_when(sampleID %in%  c("c1") ~ "Exp1",
+                              sampleID %in%  c("c2") ~ "Exp2",
+                              sampleID %in%  c("c3") ~ "Exp3",
+                              sampleID %in%  c("m6h1") ~ "Exp1",
+                              sampleID %in%  c("m6h2") ~ "Exp2",
+                              sampleID %in%  c("m28h") ~ "Exp2",
+                              sampleID %in%  c("m6h3") ~ "Exp3"))
+all(row.names(temp) == colnames(Sobj)) #TRUE
+Sobj = AddMetaData(Sobj, metadata = temp$sampleID, col.name = "Experiment")
+table(Sobj@meta.data$Experiment)
+
+View(Sobj@meta.data)
+
+# visualize
+tiff("Clusters_Subset.tiff", units="in", width=10, height=4, res=500)
+UMAPPlot(Sobj, label = F, pt.size = 0.1, split.by = "Experiment", cols = c('EC'='#f2a5ce','Melanoma'='#7a4f1c','nonEC'='#9BE64F'))
+dev.off()
+
+# ----------  EC AND MELANOMA SUBSET RECLUSTERING ----------------------  
+
+# subset EC and melanoma for downstream analysis
+SubsetS5 = subset(Sobj, idents = c("EC", "Melanoma"))
+saveRDS(SubsetS5, file = "Subset_ECMelan_res08.rds")
+
+SubsetS5[["RNA"]] = JoinLayers(SubsetS5[["RNA"]])
+rdata = GetAssayData(SubsetS5, assay = "RNA", layer = "counts")
+rdata = CreateSeuratObject(counts = rdata)
+
+# keep information from metadatatable
+temp = SubsetS5@meta.data
+all(colnames(rdata) == row.names(temp)) # [1] TRUE
+
+# select the data
+rdata = AddMetaData(rdata, temp$percent.mt, col.name = "percent.mt")
+rdata = AddMetaData(rdata, temp$percent.rb, col.name = "percent.rb")
+rdata = AddMetaData(rdata, temp$sampleID, col.name = "sampleID")
+rdata = AddMetaData(rdata, temp$treatment, col.name = "treatment")
+rdata = AddMetaData(rdata, temp$singl.doubl, col.name = "singl.doubl")
+rdata = AddMetaData(rdata, Idents(SubsetS5), col.name = "old.celltype")
+
+saveRDS(rdata, file = "rdataS5.rds")
+
+View(rdata@meta.data)
+table(rdata@meta.data$sampleID)
+#c1   c2   c3 m28h m6h1 m6h2 m6h3 
+#5941 8858 6424 6889 5141 8070 6055 
+
+rdata.split = SplitObject(rdata, split.by = "sampleID")
+
+#confirm split
+names(rdata.split)
+#[1] "c1"   "m6h1" "c2"   "m6h2" "m28h" "c3"   "m6h3"
+
+# normalize and run PCA
+rdata[["RNA"]] = split(rdata[["RNA"]], f = rdata$sampleID)
+options(future.globals.maxSize = 3e+09)
+Sobj5 = SCTransform(rdata)
+Sobj5 = RunPCA(Sobj5, npcs = 50, verbose = F)
+
+#check plot for PCs
+pdf("med.elbowplots_S5.pdf")
+ElbowPlot(Sobj5, ndims = 50)
+dev.off()
+
+#integrate
+integrateddata = IntegrateLayers(object = Sobj5,  method = RPCAIntegration,  normalization.method = "SCT",  verbose = T)
+clustereddata = FindNeighbors(integrateddata, reduction = "integrated.dr", dims = 1:24)
+clustered = FindClusters(clustereddata, resolution = 0.12)
+UMAP = RunUMAP(clustered, reduction = "integrated.dr", dims = 1:24)
+
+# Visualization
+DefaultAssay(UMAP) = "SCT"
+UMAPPlot(UMAP, label = T, pt.size = 0.1)
+DotPlot(UMAP, features = (MouseMarkers)) + RotatedAxis() +  scale_colour_gradient2(low = "#0000FF", mid = "#FFFFFF", high = "#FF0000")
+
+MouseMarkers = c ("Plat", "Fbln2", "Bmx",            # artery  
+                  "Cd93", "Ptprb","Aplnr",           # gCap
+                  "Isg15", "Ifit3b",                 # hIFN   
+                  "Pim3", "Inhbb", "Bcl3","Adamts9", 
+                  "Scarb1", "Osmr", "Tmem252",       # crEC
+                  "Car4",  "Apln", "Ednrb",          # aCap
+                  "Prox1", "Pdpn",                   # LEC
+                  "Slc6a2", "Amigo2")                # vein  
+
+cluster_cellnro = table(Idents(UMAP), UMAP$sampleID)
+write.table(cluster_cellnro , "cellnro_ECmelanoma.txt", sep="\t", row.names=TRUE, col.names=TRUE, quote= F) 
+
+#save
+saveRDS(UMAP, file = "UMAP012_PC24.rds")
+
+#rename
+names_EC = RenameIdents((UMAP),
+                        `5` = "Artery",
+                        `0` = "gCap", 
+                        `2` = "hIFN",
+                        `4` = "crEC",
+                        `1` = "aCap", 
+                        `6` = "LEC",
+                        `3` = "Vein", 
+                        `7` = "Melanoma")   
+
+#save
+saveRDS(names_EC, file = "names_EC.rds")
+
+# ------------------------REMOVE MELANOMA CELLS FROM PBS -----------------------------
+
+View(names_EC@meta.data)  
+
+#add column to meta.data
+Clusters_mouse = names_EC
+Clusters_mouse = AddMetaData(Clusters_mouse, Idents(names_EC), col.name = "identity")
+
+View(Clusters_mouse@meta.data)
+
+# wrongly clustered melanoma cells
+# GTCCACTAGAACTTCC-1_1 
+# CCTACGTCATTGACAC-1_3
+# GTTCGCTTCACCTCTG-1_6
+
+# make a list of the cells to remove
+melanoma_PBS = c("GTCCACTAGAACTTCC-1_1", "CCTACGTCATTGACAC-1_3", "GTTCGCTTCACCTCTG-1_6") 
+
+## filter them out
+Clusters_mouse_corrected = Clusters_mouse[,!colnames(Clusters_mouse) %in% melanoma_PBS]
+saveRDS(Clusters_mouse_corrected, file = "Clusters_mouse_corrected.rds")
+
+# -------------------VISUALIZE FINAL DATA------------------------------------
+
+#check quality
+Clusters_mouse_corrected$sampleID = factor(x = Clusters_mouse_corrected$sampleID, levels = c("c1", "c2", "c3", "m6h1","m6h2","m6h3","m28h"))
+tiff("violin_quality.tiff", units="in", width=6, height=4, res=800)
+VlnPlot(Clusters_mouse_corrected, features = c("nCount_RNA", "nFeature_RNA","percent.mt", "percent.rb"), 
+        group.by = "sampleID", pt.size = 0, 
+        col=c( "white", "white", "white", "#619cff","#619cff","#619cff", "#424bd5"))
+dev.off()
+
+# print cell number
+cluster_cellnro = table(Idents(Clusters_mouse_corrected), Clusters_mouse_corrected$sampleID)
+write.table(cluster_cellnro , "cellnro.txt", sep="\t", row.names=TRUE, col.names=TRUE, quote= F) 
+
+# visualize clusters 
+tiff("Clusters_UMAP.tiff", units="in", width=8, height=3, res=500)
+UMAPPlot(Clusters_mouse_corrected, label = F, pt.size = 0.01, split.by = "treatment", cols = c('Artery'='#F8766D','gCap'='#00C094','hIFN'='#c49a00','crEC'='#00b4eb', 
+                                                                                               'aCap'='#53B400', 'LEC'='#A58AFF','Vein'='#FB61D7','Melanoma'='#7a4f1c'))
+dev.off()
+
+# find markers
+DefaultAssay(Clusters_mouse_corrected) = "SCT"
+ClusterMarkersPrep = PrepSCTFindMarkers(Clusters_mouse_corrected, assay = "SCT", verbose = TRUE)
+ClusterMarkers = FindAllMarkers(ClusterMarkersPrep, assay = "SCT", only.pos = TRUE,   logfc.threshold = 0.1)
+write.table(ClusterMarkers, "MarkerListFC01.txt", sep="\t", row.names=TRUE, col.names=TRUE, quote= F)
+
+# subset 6h and PBS samples
+Set6h = subset(Clusters_mouse_corrected, treatment %in% c("PBS", "B16_6h"))
+saveRDS(Set6h, file = "MouseLung.rds")
+
+#data without melanoma 
+ECSet = subset(Set6h, idents = c("Artery", "gCap", "hIFN", "crEC", "aCap", "LEC", "Vein"))
