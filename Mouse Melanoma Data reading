@@ -1,0 +1,118 @@
+# libraries
+library(Seurat)
+library(dplyr)
+library(SeuratObject)
+
+# -------------------READ MOUSE LUNG EC DATA-------------------------------
+
+# read data sets
+c1 = Read10X(data.dir = "exp1\\c")
+c2 = Read10X(data.dir = "exp2\\c")
+c3 = Read10X(data.dir = "exp3\\c")
+mets6h1 = Read10X(data.dir = "exp1\\6h")
+mets6h2 = Read10X(data.dir = "exp2\\6h")
+mets28h = Read10X(data.dir = "exp2\\28h")
+mets6h3 = Read10X(data.dir = "exp3\\6h")
+
+# create seurat objects
+seurat_c1 = CreateSeuratObject(counts = c1, min.cells = 3, min.features = 300)
+seurat_c2 = CreateSeuratObject(counts = c2, min.cells = 3, min.features = 300) 
+seurat_c3 = CreateSeuratObject(counts = c3, min.cells = 3, min.features = 300) 
+seurat_6h1 = CreateSeuratObject(counts = mets6h1, min.cells = 3, min.features = 300)
+seurat_6h2 = CreateSeuratObject(counts = mets6h2, min.cells = 3, min.features = 300)    
+seurat_28h = CreateSeuratObject(counts = mets28h, min.cells = 3, min.features = 300)    
+seurat_6h3 = CreateSeuratObject(counts = mets6h3, min.cells = 3, min.features = 300)
+
+seurat_c1 = PercentageFeatureSet(seurat_c1, pattern = "^mt-", col.name = "percent.mt")
+seurat_c1 = PercentageFeatureSet(seurat_c1, pattern = "^Rp[sl]", col.name = "percent.rb")
+seurat_c2 = PercentageFeatureSet(seurat_c2, pattern = "^mt-", col.name = "percent.mt")
+seurat_c2 = PercentageFeatureSet(seurat_c2, pattern = "^Rp[sl]", col.name = "percent.rb")
+seurat_c3 = PercentageFeatureSet(seurat_c3, pattern = "^mt-", col.name = "percent.mt")
+seurat_c3 = PercentageFeatureSet(seurat_c3, pattern = "^Rp[sl]", col.name = "percent.rb")
+seurat_6h1 = PercentageFeatureSet(seurat_6h1, pattern = "^mt-", col.name = "percent.mt")
+seurat_6h1 = PercentageFeatureSet(seurat_6h1, pattern = "^Rp[sl]", col.name = "percent.rb")
+seurat_6h2 = PercentageFeatureSet(seurat_6h2, pattern = "^mt-", col.name = "percent.mt")
+seurat_6h2 = PercentageFeatureSet(seurat_6h2, pattern = "^Rp[sl]", col.name = "percent.rb")
+seurat_28h = PercentageFeatureSet(seurat_28h, pattern = "^mt-", col.name = "percent.mt")
+seurat_28h = PercentageFeatureSet(seurat_28h, pattern = "^Rp[sl]", col.name = "percent.rb")
+seurat_6h3 = PercentageFeatureSet(seurat_6h3, pattern = "^mt-", col.name = "percent.mt")
+seurat_6h3 = PercentageFeatureSet(seurat_6h3, pattern = "^Rp[sl]", col.name = "percent.rb")
+
+#visualize
+tiff("Violin_mtrb_c1.tiff", units="in", width=10, height=5, res=300)
+VlnPlot(seurat_c1, features = c("percent.mt", "percent.rb"), ncol = 2, pt.size = 0) 
+dev.off()
+
+tiff("Violin_mtrb_c2.tiff", units="in", width=10, height=5, res=300)
+VlnPlot(seurat_c2, features = c("percent.mt", "percent.rb"), ncol = 2, pt.size = 0) 
+dev.off()
+
+tiff("Violin_mtrb_c3.tiff", units="in", width=10, height=5, res=300)
+VlnPlot(seurat_c3, features = c("percent.mt", "percent.rb"), ncol = 2, pt.size = 0) 
+dev.off()
+
+tiff("Violin_mtrb_6h1.tiff", units="in", width=10, height=5, res=300)
+VlnPlot(seurat_6h1, features = c("percent.mt", "percent.rb"), ncol = 2, pt.size = 0) 
+dev.off()
+
+tiff("Violin_mtrb_6h2.tiff", units="in", width=10, height=5, res=300)
+VlnPlot(seurat_6h2, features = c("percent.mt", "percent.rb"), ncol = 2, pt.size = 0) 
+dev.off()
+
+tiff("Violin_mtrb_6h3.tiff", units="in", width=10, height=5, res=300)
+VlnPlot(seurat_6h3, features = c("percent.mt", "percent.rb"), ncol = 2, pt.size = 0) 
+dev.off()
+
+tiff("Violin_mtrb_28h.tiff", units="in", width=10, height=5, res=300)
+VlnPlot(seurat_28h, features = c("percent.mt", "percent.rb"), ncol = 2, pt.size = 0) 
+dev.off()
+
+# add sample and treatment names
+seurat_c1$sampleID = "c1"
+seurat_c1$treatment = "PBS"
+
+seurat_c2$sampleID = "c2"
+seurat_c2$treatment = "PBS"
+
+seurat_c3$sampleID = "c3"
+seurat_c3$treatment = "PBS"
+
+seurat_6h1$sampleID = "m6h1"
+seurat_6h1$treatment = "B16_6h"
+
+seurat_6h2$sampleID = "m6h2"
+seurat_6h2$treatment = "B16_6h"
+
+seurat_6h3$sampleID = "m6h3"
+seurat_6h3$treatment = "B16_6h"
+
+seurat_28h$sampleID = "m28h"
+seurat_28h$treatment = "B16_28h"
+
+seurat_c1  = subset(seurat_c1, subset = percent.mt < 20)
+seurat_c2  = subset(seurat_c2, subset = percent.mt < 20)
+seurat_c3  = subset(seurat_c3, subset = percent.mt < 20)
+seurat_6h1  = subset(seurat_6h1, subset = percent.mt < 20)
+seurat_6h2  = subset(seurat_6h2, subset = percent.mt < 20)
+seurat_6h3  = subset(seurat_6h3, subset = percent.mt < 20)
+seurat_28h  = subset(seurat_28h, subset = percent.mt < 20)
+
+# normalize and cluster each sample similarly 
+# change file name for each sample
+Sobj = seurat_c1
+
+# perform normalization and dimensional reduction
+Sobj = SCTransform(Sobj)
+Sobj = RunPCA(Sobj, n_components = 0.95)
+
+# save and visualize
+pdf("elbowplot.pdf")
+ElbowPlot(object = Sobj, ndims = 50)
+dev.off()
+
+Sobj = RunUMAP(Sobj, reduction = "pca", dims = 1:20)
+Sobj = FindNeighbors(Sobj, reduction = "pca", dims = 1:20)
+Sobj = FindClusters(Sobj, resolution = 0.5)
+
+#save each sample, change name depending on sample
+saveRDS(Sobj, file = "Sobj.rds")
