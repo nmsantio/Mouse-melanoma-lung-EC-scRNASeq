@@ -102,14 +102,6 @@ https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE253751
 
 
 
-set1 (exp1) GSE235394, access code: unmnswysnbkbfed 
-
-set2 (exp2) GSE253749, access code: sdcbkssgblypdyn  
-
-set3 (exp3) GSE253751, access code: otclcwsybzuhtyf 
-
-
-
 Follow code at 
 
 https://github.com/nmsantio/Mouse-melanoma-lung-EC-scRNASeq
